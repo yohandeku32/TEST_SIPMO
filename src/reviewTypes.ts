@@ -21,6 +21,31 @@ export interface ReviewUpload {
   UPLOADED_BY: string;
   PARENT_UPLOAD_ID: string;
   SOURCE: string;
+  PAGU_ARG?: number | string;
+  TANGGAL_PAGU?: string;
+  REALISASI_ARG?: number | string;
+  TANGGAL_REALISASI?: string;
+  UPDATED_ANGGARAN_AT?: string;
+}
+
+
+export interface BudgetRecord {
+  ANGGARAN_ID: string;
+  OPD_ID: string;
+  NAMA_OPD: string;
+  TAHUN: string;
+  PAGU_ARG: number | string;
+  TANGGAL_PAGU: string;
+  REALISASI_ARG: number | string;
+  TANGGAL_REALISASI: string;
+  UPDATED_AT: string;
+}
+
+export interface BudgetInput {
+  paguAnggaran: number;
+  tanggalPagu: string;
+  realisasiAnggaran?: number;
+  tanggalRealisasi?: string;
 }
 
 export interface ReviewRecord {
