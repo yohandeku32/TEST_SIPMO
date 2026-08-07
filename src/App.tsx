@@ -1631,10 +1631,11 @@ export default function App() {
                 setShowLoginModal(false);
                 setShowOperatorLogin(true);
               }}
-              className="hidden text-xs font-semibold text-slate-600 transition-colors hover:text-[#1E40AF] sm:inline-flex items-center gap-1 cursor-pointer"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700 shadow-sm transition-all hover:border-blue-200 hover:bg-blue-50 hover:text-[#1E40AF] sm:px-4"
             >
-              <ShieldCheck className="w-4 h-4" />
-              <span>Operator</span>
+              <ShieldCheck className="h-4 w-4" />
+              <span className="hidden sm:inline">LOGIN OPERATOR</span>
+              <span className="sm:hidden">OPERATOR</span>
             </button>
             
             {loggedInOPD ? (
