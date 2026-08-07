@@ -40,7 +40,7 @@ import { OperatorSession, RevisionTarget } from './reviewTypes';
 // Masukkan URL Web App Google Apps Script Anda di bawah ini
 const GOOGLE_APPS_SCRIPT_WEB_APP_URL =
   String(import.meta.env.VITE_APPS_SCRIPT_URL || '').trim() ||
-  "https://script.google.com/macros/s/AKfycbyOQVm5t4g8iekuWviSqHLV33IECqOJaC7gs0jBAVabWhjVHsC1NcaJBrxbYU59maq7/exec";
+  "https://script.google.com/macros/s/AKfycbze3wK7BOFyhEuKGWuZXsT-QkL8Ti9neeJ5UXfuN5iJ36G27jI2-Xa1fGWNrpqBDryi7g/exec";
 
 
 // DAFTAR RESMI 42 OPD YANG BOLEH MASUK KE DASHBOARD.
