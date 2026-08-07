@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  CalendarDays,
   CheckCircle2,
   ChevronDown,
   Clock3,
@@ -16,6 +17,7 @@ import {
   Send,
   ShieldCheck,
   UploadCloud,
+  WalletCards,
   XCircle,
 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -65,6 +67,20 @@ const statusClass: Record<ReviewStatus, string> = {
   DIUNGGAH_ULANG: 'border-violet-200 bg-violet-50 text-violet-700',
   DISETUJUI: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   DITOLAK: 'border-slate-300 bg-slate-100 text-slate-700',
+};
+
+const formatRupiah = (value: number | string | undefined) =>
+  new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0));
+
+const getRealisasiPercentage = (pagu: number | string | undefined, realisasi: number | string | undefined) => {
+  const paguNumber = Number(pagu || 0);
+  const realisasiNumber = Number(realisasi || 0);
+  if (paguNumber <= 0) return 0;
+  return Math.min(100, Math.max(0, (realisasiNumber / paguNumber) * 100));
 };
 
 export default function OperatorDashboard({ apiUrl, session, onLogout }: Props) {
@@ -358,6 +374,54 @@ export default function OperatorDashboard({ apiUrl, session, onLogout }: Props) 
                     {statusLabel[selected.STATUS]}
                   </span>
                 </div>
+
+                <section className="mt-5 rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-700 text-white">
+                        <WalletCards className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-slate-900">Anggaran Responsif Gender</p>
+                        <p className="mt-1 text-[10px] text-slate-500">Tahun {selected.TAHUN}</p>
+                      </div>
+                    </div>
+                    {!Number(selected.PAGU_ARG || 0) && (
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[9px] font-extrabold text-amber-700">Belum diisi</span>
+                    )}
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl border border-blue-100 bg-white p-4">
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Pagu ARG</p>
+                      <p className="mt-2 text-lg font-black text-slate-950">{formatRupiah(selected.PAGU_ARG)}</p>
+                      <p className="mt-2 flex items-center gap-1 text-[9px] font-semibold text-slate-400">
+                        <CalendarDays className="h-3 w-3" /> {selected.TANGGAL_PAGU || 'Tanggal belum diisi'}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-blue-100 bg-white p-4">
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Realisasi ARG</p>
+                      <p className="mt-2 text-lg font-black text-slate-950">{formatRupiah(selected.REALISASI_ARG)}</p>
+                      <p className="mt-2 flex items-center gap-1 text-[9px] font-semibold text-slate-400">
+                        <CalendarDays className="h-3 w-3" /> {selected.TANGGAL_REALISASI || 'Dapat diisi menyusul'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 rounded-xl bg-white p-3 ring-1 ring-blue-100">
+                    <div className="flex items-center justify-between text-[10px] font-bold">
+                      <span className="text-slate-500">Realisasi terhadap pagu</span>
+                      <span className="text-blue-800">{getRealisasiPercentage(selected.PAGU_ARG, selected.REALISASI_ARG).toFixed(1)}%</span>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className="h-full rounded-full bg-blue-700 transition-all"
+                        style={{ width: `${getRealisasiPercentage(selected.PAGU_ARG, selected.REALISASI_ARG)}%` }}
+                      />
+                    </div>
+                  </div>
+                </section>
 
                 <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <div className="flex items-start gap-3">
