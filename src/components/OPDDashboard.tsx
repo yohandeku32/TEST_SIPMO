@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Bell,
+  CalendarDays,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -10,17 +11,19 @@ import {
   FileText,
   Info,
   Loader2,
+  Save,
   LogOut,
   RefreshCw,
   ShieldCheck,
   UploadCloud,
   User,
+  WalletCards,
   X,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { getReviewAction, postReviewAction, toBoolean } from '../reviewApi';
 import { OPDData } from '../types';
-import { ReviewNotification, ReviewRecord, RevisionTarget } from '../reviewTypes';
+import { BudgetInput, BudgetRecord, ReviewNotification, ReviewRecord, RevisionTarget } from '../reviewTypes';
 
 type UploadSlotKey = 'file1' | 'file2' | 'file3' | 'file4';
 
@@ -44,7 +47,7 @@ type Props = {
   uploadProgress: number;
   uploadedSuccessKeys: string[];
   handleLocalFileChange: (slot: UploadSlotKey, file: File | null) => void;
-  triggerUploadSimulation: () => void;
+  triggerUploadSimulation: (budget: BudgetInput) => void | Promise<void>;
   revisionTarget: RevisionTarget | null;
   onStartRevision: (target: RevisionTarget) => void;
   onCancelRevision: () => void;
@@ -110,6 +113,23 @@ const statusClass: Record<string, string> = {
   DITOLAK: 'border-slate-300 bg-slate-100 text-slate-700',
 };
 
+const onlyDigits = (value: string) => value.replace(/[^0-9]/g, '');
+
+const formatAmountInput = (value: string | number) => {
+  const digits = onlyDigits(String(value ?? ''));
+  if (!digits) return '';
+  return new Intl.NumberFormat('id-ID').format(Number(digits));
+};
+
+const parseAmountInput = (value: string) => Number(onlyDigits(value) || 0);
+
+const formatRupiah = (value: string | number | undefined) =>
+  new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0));
+
 export default function OPDDashboard({
   apiUrl,
   loggedInOPD,
@@ -134,7 +154,96 @@ export default function OPDDashboard({
   const [loadingReviews, setLoadingReviews] = useState(true);
   const [reviewError, setReviewError] = useState<string | null>(null);
 
+  const [paguAnggaran, setPaguAnggaran] = useState('');
+  const [tanggalPagu, setTanggalPagu] = useState('');
+  const [realisasiAnggaran, setRealisasiAnggaran] = useState('');
+  const [tanggalRealisasi, setTanggalRealisasi] = useState('');
+  const [budgetLoading, setBudgetLoading] = useState(true);
+  const [budgetSaving, setBudgetSaving] = useState(false);
+  const [budgetMessage, setBudgetMessage] = useState<string | null>(null);
+
   const unreadCount = notifications.filter(item => !toBoolean(item.IS_READ)).length;
+
+  const loadBudgetData = async () => {
+    setBudgetLoading(true);
+    setBudgetMessage(null);
+
+    try {
+      const result = await getReviewAction<{ budget: BudgetRecord | null }>(
+        apiUrl,
+        'getOPDBudget',
+        { opdName: loggedInOPD.namaOPD, tahun: selectedYear },
+      );
+
+      const budget = result.budget;
+      setPaguAnggaran(budget ? formatAmountInput(budget.PAGU_ARG) : '');
+      setTanggalPagu(budget?.TANGGAL_PAGU || '');
+      setRealisasiAnggaran(
+        budget && Number(budget.REALISASI_ARG || 0) > 0
+          ? formatAmountInput(budget.REALISASI_ARG)
+          : '',
+      );
+      setTanggalRealisasi(budget?.TANGGAL_REALISASI || '');
+    } catch (error) {
+      setPaguAnggaran('');
+      setTanggalPagu('');
+      setRealisasiAnggaran('');
+      setTanggalRealisasi('');
+      setBudgetMessage(error instanceof Error ? error.message : 'Data anggaran gagal dimuat.');
+    } finally {
+      setBudgetLoading(false);
+    }
+  };
+
+  const getBudgetPayload = (): BudgetInput | null => {
+    const pagu = parseAmountInput(paguAnggaran);
+    const realisasi = parseAmountInput(realisasiAnggaran);
+
+    if (pagu <= 0 || !tanggalPagu) {
+      setBudgetMessage('Pagu Anggaran Responsif Gender dan tanggal pagu wajib diisi sebelum upload.');
+      return null;
+    }
+
+    if (realisasi > 0 && !tanggalRealisasi) {
+      setBudgetMessage('Tanggal realisasi wajib diisi jika realisasi anggaran sudah diisi.');
+      return null;
+    }
+
+    return {
+      paguAnggaran: pagu,
+      tanggalPagu,
+      realisasiAnggaran: realisasi,
+      tanggalRealisasi: realisasi > 0 ? tanggalRealisasi : '',
+    };
+  };
+
+  const saveBudgetData = async () => {
+    const budget = getBudgetPayload();
+    if (!budget) return;
+
+    setBudgetSaving(true);
+    setBudgetMessage(null);
+
+    try {
+      await postReviewAction<{ budget: BudgetRecord }>(apiUrl, {
+        action: 'saveOPDBudget',
+        opdName: loggedInOPD.namaOPD,
+        tahun: selectedYear,
+        ...budget,
+      });
+      setBudgetMessage('Data anggaran berhasil disimpan.');
+    } catch (error) {
+      setBudgetMessage(error instanceof Error ? error.message : 'Data anggaran gagal disimpan.');
+    } finally {
+      setBudgetSaving(false);
+    }
+  };
+
+  const handleUploadWithBudget = () => {
+    const budget = getBudgetPayload();
+    if (!budget) return;
+    void triggerUploadSimulation(budget);
+  };
 
   const loadReviewData = async (silent = false) => {
     if (!silent) setLoadingReviews(true);
@@ -162,6 +271,10 @@ export default function OPDDashboard({
       setLoadingReviews(false);
     }
   };
+
+  useEffect(() => {
+    void loadBudgetData();
+  }, [loggedInOPD.namaOPD, selectedYear]);
 
   useEffect(() => {
     void loadReviewData();
@@ -393,6 +506,112 @@ export default function OPDDashboard({
             </div>
           )}
 
+          <section className="mt-6 rounded-2xl border border-blue-100 bg-blue-50/40 p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-700 text-white">
+                  <WalletCards className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-black text-slate-900">Anggaran Responsif Gender</p>
+                  <p className="mt-1 text-[10px] text-slate-500">Data khusus OPD untuk Tahun {selectedYear}</p>
+                </div>
+              </div>
+              <span className="self-start rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[9px] font-extrabold text-rose-700 sm:self-auto">
+                Pagu wajib sebelum upload
+              </span>
+            </div>
+
+            {budgetLoading ? (
+              <div className="mt-5 flex items-center gap-2 rounded-xl bg-white px-4 py-4 text-xs font-semibold text-slate-400">
+                <Loader2 className="h-4 w-4 animate-spin" /> Memuat data anggaran...
+              </div>
+            ) : (
+              <>
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-500">Pagu Anggaran Responsif Gender *</label>
+                    <div className="relative">
+                      <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">Rp</span>
+                      <input
+                        value={paguAnggaran}
+                        onChange={event => { setPaguAnggaran(formatAmountInput(event.target.value)); setBudgetMessage(null); }}
+                        inputMode="numeric"
+                        placeholder="0"
+                        className="w-full rounded-xl border border-slate-200 bg-white py-3.5 pl-11 pr-4 text-sm font-extrabold text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-500">Tanggal Pagu *</label>
+                    <div className="relative">
+                      <CalendarDays className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="date"
+                        value={tanggalPagu}
+                        onChange={event => { setTanggalPagu(event.target.value); setBudgetMessage(null); }}
+                        className="w-full rounded-xl border border-slate-200 bg-white py-3.5 pl-11 pr-4 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-500">Realisasi Anggaran Responsif Gender</label>
+                    <div className="relative">
+                      <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">Rp</span>
+                      <input
+                        value={realisasiAnggaran}
+                        onChange={event => { setRealisasiAnggaran(formatAmountInput(event.target.value)); setBudgetMessage(null); }}
+                        inputMode="numeric"
+                        placeholder="Bisa diisi menyusul"
+                        className="w-full rounded-xl border border-slate-200 bg-white py-3.5 pl-11 pr-4 text-sm font-extrabold text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-500">Tanggal Realisasi</label>
+                    <div className="relative">
+                      <CalendarDays className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="date"
+                        value={tanggalRealisasi}
+                        disabled={!realisasiAnggaran}
+                        onChange={event => { setTanggalRealisasi(event.target.value); setBudgetMessage(null); }}
+                        className="w-full rounded-xl border border-slate-200 bg-white py-3.5 pl-11 pr-4 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-col gap-3 rounded-xl border border-blue-100 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Ringkasan Tahun {selectedYear}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-600">
+                      Pagu {formatRupiah(parseAmountInput(paguAnggaran))} · Realisasi {formatRupiah(parseAmountInput(realisasiAnggaran))}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void saveBudgetData()}
+                    disabled={budgetSaving}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-950 px-4 py-3 text-[10px] font-extrabold text-white transition hover:bg-blue-900 disabled:opacity-50"
+                  >
+                    {budgetSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    {budgetSaving ? 'Menyimpan...' : 'Simpan / Perbarui Anggaran'}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {budgetMessage && (
+              <div className={`mt-4 rounded-xl border px-4 py-3 text-[10px] font-semibold ${budgetMessage.includes('berhasil') ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+                {budgetMessage}
+              </div>
+            )}
+          </section>
+
           <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
             {slots.map(slot => {
               const Icon = slot.icon;
@@ -486,8 +705,8 @@ export default function OPDDashboard({
             <p className="text-[10px] font-semibold leading-relaxed text-slate-400">Format PDF, DOC, DOCX, XLS, XLSX. Maksimal 10 MB per file.</p>
             <button
               type="button"
-              onClick={triggerUploadSimulation}
-              disabled={uploadStatus !== 'IDLE' || selectedCount === 0}
+              onClick={handleUploadWithBudget}
+              disabled={uploadStatus !== 'IDLE' || selectedCount === 0 || budgetLoading || parseAmountInput(paguAnggaran) <= 0 || !tanggalPagu}
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-6 py-3.5 text-xs font-extrabold text-white shadow-lg transition hover:bg-emerald-700 disabled:pointer-events-none disabled:opacity-50"
             >
               {uploadStatus === 'SUCCESS' ? <CheckCircle2 className="h-4 w-4" /> : <UploadCloud className="h-4 w-4" />}
