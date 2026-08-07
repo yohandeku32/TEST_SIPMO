@@ -1,0 +1,6 @@
+{
+  "name": "SIPMODAG - DP3AP2KB NTT",
+  "description": "Sistem Pengelolaan & Monitoring Dokumen Analisis Gender - DP3AP2KB Provinsi Nusa Tenggara Timur",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
