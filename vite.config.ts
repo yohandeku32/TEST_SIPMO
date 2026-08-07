@@ -5,7 +5,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig(() => {
   return {
-    base: '/',
+    base: 'https://yohandeku32.github.io/TEST_SIPMO/',
 
     plugins: [
       react(),
