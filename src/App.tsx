@@ -35,12 +35,12 @@ import OPDLoginScreen from './components/OPDLoginScreen';
 import OPDDashboard from './components/OPDDashboard';
 import OperatorLogin from './components/OperatorLogin';
 import OperatorDashboard from './components/OperatorDashboard';
-import { OperatorSession, RevisionTarget } from './reviewTypes';
+import { BudgetInput, OperatorSession, RevisionTarget } from './reviewTypes';
 
 // Masukkan URL Web App Google Apps Script Anda di bawah ini
 const GOOGLE_APPS_SCRIPT_WEB_APP_URL =
   String(import.meta.env.VITE_APPS_SCRIPT_URL || '').trim() ||
-  "https://script.google.com/macros/s/AKfycbze3wK7BOFyhEuKGWuZXsT-QkL8Ti9neeJ5UXfuN5iJ36G27jI2-Xa1fGWNrpqBDryi7g/exec";
+  "https://script.google.com/macros/s/AKfycbyOQVm5t4g8iekuWviSqHLV33IECqOJaC7gs0jBAVabWhjVHsC1NcaJBrxbYU59maq7/exec";
 
 
 // DAFTAR RESMI 42 OPD YANG BOLEH MASUK KE DASHBOARD.
@@ -1215,7 +1215,7 @@ export default function App() {
     });
   };
 
-  const triggerUploadSimulation = async () => {
+  const triggerUploadSimulation = async (budget: BudgetInput) => {
     const fileKeys: (keyof typeof uploadedFiles)[] = [
       'file1',
       'file2',
@@ -1259,6 +1259,16 @@ export default function App() {
 
     if (!GOOGLE_APPS_SCRIPT_WEB_APP_URL.trim()) {
       alert('URL Web App Google Apps Script belum diatur.');
+      return;
+    }
+
+    if (!budget || !Number(budget.paguAnggaran) || !budget.tanggalPagu) {
+      alert('Pagu Anggaran Responsif Gender dan tanggal pagu wajib diisi sebelum upload.');
+      return;
+    }
+
+    if (Number(budget.realisasiAnggaran || 0) > 0 && !budget.tanggalRealisasi) {
+      alert('Tanggal realisasi wajib diisi jika realisasi anggaran sudah diisi.');
       return;
     }
 
@@ -1306,6 +1316,10 @@ export default function App() {
             : { action: 'uploadOriginal' }),
           opdName: loggedInOPD.namaOPD,
           tahun: selectedYear,
+          paguAnggaran: Number(budget.paguAnggaran),
+          tanggalPagu: budget.tanggalPagu,
+          realisasiAnggaran: Number(budget.realisasiAnggaran || 0),
+          tanggalRealisasi: budget.tanggalRealisasi || '',
           files: [
             {
               title: activeFile.title,
