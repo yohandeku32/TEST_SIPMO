@@ -125,14 +125,15 @@ export default async function handler(req, res) {
     const allowed = [
       "SELECT",
       "INSERT",
-      "UPDATE"
+      "UPDATE",
+      "DELETE"
     ];
 
     if (!allowed.includes(keyword)) {
       return res.status(403).json({
         success: false,
         message:
-          "Perintah SQL tidak diizinkan. Hanya SELECT, INSERT, dan UPDATE."
+          "Perintah SQL tidak diizinkan. Hanya SELECT, INSERT, UPDATE, dan DELETE."
       });
     }
 
