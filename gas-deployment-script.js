@@ -1,5 +1,5 @@
-const ROOT_FOLDER_ID = "1Uzcc0VO2D7HnWqpl88ea0usl1DdVK8oD"; // Ganti dengan ID Folder Drive Anda
-const SPREADSHEET_ID = "ID_SPREADSHEET_ANDA";             // Ganti dengan ID Spreadsheet Google Anda (bukan URL publikasi)
+const ROOT_FOLDER_ID = "167MHW_q5CptnCSlBK3W3eowm1Zr4sXN7"; // Ganti dengan ID Folder Drive Anda
+const SPREADSHEET_ID = "1C86g24ZfzvFoxM8tcdQuEYr7cjroGRCTNms-MpvVLdo";             // Ganti dengan ID Spreadsheet Google Anda (bukan URL publikasi)
 const SHEET_NAME = "Form Responses 1";                   // Ganti dengan nama tab Spreadsheet Anda (misal: "Form Responses 1" atau "Sheet1")
 
 // Zona waktu NTT/WITA
