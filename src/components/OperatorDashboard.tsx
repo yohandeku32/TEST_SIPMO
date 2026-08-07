@@ -296,9 +296,9 @@ export default function OperatorDashboard({ apiUrl, session, onLogout }: Props) 
   };
 
   useEffect(() => {
+    // Muat sekali saat halaman/filter berubah.
+    // Tidak ada auto-refresh berkala; refresh berikutnya hanya lewat tombol Segarkan.
     void loadQueue();
-    const timer = window.setInterval(() => void loadQueue(), 30000);
-    return () => window.clearInterval(timer);
   }, [year, statusFilter, session.token]);
 
   useEffect(() => {
@@ -359,14 +359,9 @@ export default function OperatorDashboard({ apiUrl, session, onLogout }: Props) 
   useEffect(() => {
     if (activeTab !== 'opd-dashboard') return;
 
+    // Muat sekali saat membuka Dashboard 42 OPD atau mengganti tahun.
+    // Setelah itu data hanya diperbarui saat tombol Segarkan diklik.
     void loadOPDOverview();
-
-    const timer = window.setInterval(
-      () => void loadOPDOverview(),
-      30000,
-    );
-
-    return () => window.clearInterval(timer);
   }, [activeTab, overviewYear, session.token]);
 
   const opdDashboardRows = useMemo<DashboardOPDRow[]>(() => {
