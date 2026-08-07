@@ -39,7 +39,7 @@ import { BudgetInput, OperatorSession, RevisionTarget } from './reviewTypes';
 // Masukkan URL Web App Google Apps Script Anda di bawah ini
 const GOOGLE_APPS_SCRIPT_WEB_APP_URL =
   String(import.meta.env.VITE_APPS_SCRIPT_URL || '').trim() ||
-  "https://script.google.com/macros/s/AKfycbzSq9P2_oE8MfME8HhIXMfK5lp10Kf48q0aCZUlDVwgOkFhHg4vsrtOyb3oeqirjlKbHw/exec";
+  "https://script.google.com/macros/s/AKfycbze3wK7BOFyhEuKGWuZXsT-QkL8Ti9neeJ5UXfuN5iJ36G27jI2-Xa1fGWNrpqBDryi7g/exec";
 
 
 // DAFTAR RESMI 42 OPD YANG BOLEH MASUK KE DASHBOARD.
@@ -1619,7 +1619,7 @@ export default function App() {
                 setShowLoginModal(false);
                 setShowOperatorLogin(true);
               }}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700 shadow-sm transition-all hover:border-blue-200 hover:bg-blue-50 hover:text-[#1E40AF] sm:px-4"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-semibold text-rose-700 shadow-sm transition-all hover:border-rose-300 hover:bg-rose-100 hover:text-rose-800 sm:px-4"
             >
               <ShieldCheck className="h-4 w-4" />
               <span className="hidden sm:inline">LOGIN OPERATOR</span>
@@ -2114,4 +2114,3 @@ export default function App() {
       </AnimatePresence>
     </div>
   );
-}
