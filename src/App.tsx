@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import Papa from 'papaparse';
 import { 
   RefreshCw, 
   ExternalLink, 
@@ -39,7 +40,7 @@ import { BudgetInput, OperatorSession, RevisionTarget } from './reviewTypes';
 // Masukkan URL Web App Google Apps Script Anda di bawah ini
 const GOOGLE_APPS_SCRIPT_WEB_APP_URL =
   String(import.meta.env.VITE_APPS_SCRIPT_URL || '').trim() ||
-  "https://script.google.com/macros/s/AKfycbzSq9P2_oE8MfME8HhIXMfK5lp10Kf48q0aCZUlDVwgOkFhHg4vsrtOyb3oeqirjlKbHw/exec";
+  "https://script.google.com/macros/s/AKfycbze3wK7BOFyhEuKGWuZXsT-QkL8Ti9neeJ5UXfuN5iJ36G27jI2-Xa1fGWNrpqBDryi7g/exec";
 
 
 // DAFTAR RESMI 42 OPD YANG BOLEH MASUK KE DASHBOARD.
@@ -467,7 +468,7 @@ export default function App() {
   const [data, setData] = useState<OPDData[]>(OFFICIAL_OPDS);
   const [loading, setLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-  const [dataSource, setDataSource] = useState<'LIVE_TIDB' | 'FALLBACK_DEMO'>('FALLBACK_DEMO');
+  const [dataSource, setDataSource] = useState<'LIVE_SHEET' | 'FALLBACK_DEMO'>('FALLBACK_DEMO');
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showFAQ, setShowFAQ] = useState<boolean>(false);
@@ -542,10 +543,13 @@ export default function App() {
 
   // Ref selalu mengikuti tahun terbaru, termasuk ketika request lama belum selesai.
   dashboardYearRef.current = dashboardYear;
+
   /*
-   * Dashboard publik sekarang membaca data dari TiDB melalui
-   * Google Apps Script Web App, bukan lagi CSV Google Sheet.
+   * PENTING:
+   * URL ini harus mengarah ke tab FORM RESPONSES, bukan tab Dashboard.
+   * Ganti angka gid=26018163 dengan GID tab Form Responses Anda.
    */
+  const formResponsesCSVUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTVpRDlbLQsH5ofDlimZX6eoyl1NgNjfUA-aDUbsN0Scjur7lWHeqwPwTZI41AVnefbPZwxq8OJLZEr/pub?gid=1054627461&single=true&output=csv";
 
   const getPendingFlags = (
     opdName: string,
@@ -559,7 +563,7 @@ export default function App() {
   };
 
   // Flags dokumen OPD yang sedang login untuk tahun yang dipilih.
-  // Data TiDB digabung dengan penanda sementara selama API diperbarui.
+  // Data Spreadsheet digabung dengan penanda sementara selama CSV diperbarui.
   const currentOPDFlags = React.useMemo<DocumentFlags>(() => {
     const flags: DocumentFlags = {
       gap: false,
@@ -608,7 +612,7 @@ export default function App() {
     return flags;
   }, [loggedInOPD, selectedYear, allResponseRows, pendingUploadedDocs]);
 
-  // Data tampilan menggabungkan data resmi TiDB dengan penanda upload
+  // Data tampilan menggabungkan data resmi Spreadsheet dengan penanda upload
   // sementara. Penanda ini otomatis hilang setelah Spreadsheet terkonfirmasi
   // atau setelah masa tunggu berakhir.
   const displayData = React.useMemo<OPDData[]>(() => {
@@ -665,7 +669,7 @@ export default function App() {
       : loggedInOPD;
   }, [loggedInOPD, displayData]);
 
-  // Statistik memakai jumlah OPD unik langsung dari TiDB.
+  // Statistik memakai jumlah OPD unik langsung dari Form Responses.
   // Hanya 42 OPD resmi yang dihitung; data OPD lain diabaikan.
   const stats = React.useMemo<DashboardStats>(() => {
     const targetOPD = OFFICIAL_OPDS.length;
@@ -673,7 +677,7 @@ export default function App() {
       opd => opd.jumlahUpload > 0
     ).length;
 
-    const sourceCount = dataSource === 'LIVE_TIDB'
+    const sourceCount = dataSource === 'LIVE_SHEET'
       ? Math.max(sheetUploadedCount, visibleUploadedCount)
       : visibleUploadedCount;
 
@@ -702,17 +706,8 @@ export default function App() {
    * F = Dokumen SK Focal Point
    * G = Tahun
    */
-  /**
-   * Membaca data dashboard dari TiDB melalui Google Apps Script.
-   *
-   * Apps Script mengembalikan row kompatibel dengan struktur lama:
-   * [Timestamp, Nama OPD, GAP, GBS, KAK, SK Focal Point, Tahun]
-   *
-   * Dengan bentuk ini, seluruh logika pencocokan 42 OPD, snapshot,
-   * konfirmasi penurunan dua kali, dan pending upload tetap dipertahankan.
-   */
-  const fetchData = async (isManual = false) => {
-    // Jangan membuat beberapa request database berjalan bersamaan.
+  const fetchData = (isManual = false) => {
+    // Jangan membuat beberapa request CSV berjalan bersamaan.
     // Permintaan yang datang saat proses masih berjalan cukup diantrikan sekali.
     if (fetchInFlightRef.current) {
       refreshQueuedRef.current = true;
@@ -747,420 +742,450 @@ export default function App() {
       }
     };
 
-    try {
-      const separator = GOOGLE_APPS_SCRIPT_WEB_APP_URL.includes('?') ? '&' : '?';
-      const dashboardApiUrl =
-        `${GOOGLE_APPS_SCRIPT_WEB_APP_URL}${separator}action=getPublicDashboard&t=${Date.now()}`;
+    const noCacheUrl = `${formResponsesCSVUrl}&t=${Date.now()}`;
 
-      const response = await fetch(dashboardApiUrl, {
-        method: 'GET',
-        cache: 'no-store',
-        redirect: 'follow',
-      });
+    Papa.parse(noCacheUrl, {
+      download: true,
+      header: false,
+      skipEmptyLines: true,
+      complete: (results) => {
+        try {
+          const rows = results.data as string[][];
 
-      if (!response.ok) {
-        throw new Error(`API dashboard gagal. HTTP ${response.status}.`);
-      }
+          if (!Array.isArray(rows) || rows.length === 0) {
+            throw new Error('CSV Form Responses kosong atau tidak dapat dibaca.');
+          }
 
-      const payload = await response.json();
+          /*
+           * Header otomatis dilewati:
+           * - Kolom B harus memiliki nama OPD.
+           * - Kolom G harus berisi tahun empat digit.
+           */
+          const responseRows = rows.filter(row => {
+            const opdName = String(row?.[1] || '').trim();
+            const year = extractYear(row?.[6]);
 
-      if (!payload || payload.success !== true) {
-        throw new Error(
-          payload?.message || 'Data dashboard TiDB tidak dapat dibaca.'
-        );
-      }
-
-      const rows = Array.isArray(payload.rows)
-        ? payload.rows as string[][]
-        : [];
-
-      /*
-       * Row API dibuat kompatibel dengan susunan lama:
-       * A = Timestamp terakhir
-       * B = Nama OPD
-       * C = Dokumen GAP
-       * D = Dokumen GBS
-       * E = Dokumen KAK
-       * F = Dokumen SK Focal Point
-       * G = Tahun
-       */
-      const responseRows = rows.filter(row => {
-        const opdName = String(row?.[1] || '').trim();
-        const year = extractYear(row?.[6]);
-
-        // Hanya 42 OPD resmi yang diizinkan masuk ke dashboard.
-        return opdName !== '' && year !== '' && isDashboardOPD(opdName);
-      });
-
-      const rowsForSelectedYear = responseRows.filter(
-        row => extractYear(row[6]) === requestedYear
-      );
-
-      /*
-       * Gabungkan baris milik OPD yang sama menggunakan identitas nama
-       * yang konservatif. Logika lama tetap dipertahankan.
-       */
-      const documentsByOPD = new Map<string, OPDDocumentGroup>();
-
-      rowsForSelectedYear.forEach(row => {
-        const rawName = String(row[1] || '').trim();
-        const identityKey = createOPDIdentityKey(rawName);
-
-        if (!rawName || !identityKey) return;
-
-        const incoming: DocumentFlags = {
-          gap: hasDocumentValue(row[2]),
-          gbs: hasDocumentValue(row[3]),
-          kak: hasDocumentValue(row[4]),
-          sk: hasDocumentValue(row[5]),
-        };
-
-        const existing = documentsByOPD.get(identityKey);
-
-        if (existing) {
-          const merged = mergeDocumentFlags(existing, incoming);
-          documentsByOPD.set(identityKey, {
-            ...merged,
-            namaOPD: existing.namaOPD,
+            // Hanya 42 OPD resmi yang diizinkan masuk ke dashboard.
+            // Nama OPD lain di Form Responses tetap berada di Sheet,
+            // tetapi tidak dihitung dan tidak ditampilkan di website.
+            return opdName !== '' && year !== '' && isDashboardOPD(opdName);
           });
-        } else {
-          documentsByOPD.set(identityKey, {
-            ...incoming,
-            namaOPD: rawName,
-          });
-        }
-      });
 
-      const uploadedGroups = Array.from(documentsByOPD.entries())
-        .filter(([, group]) => hasAnyDocument(group))
-        .map(([groupKey, group]) => ({ groupKey, group }));
-
-      const flagsByFallbackIndex = new Map<number, DocumentFlags>();
-      const assignedGroupKeys = new Set<string>();
-      const usedFallbackIndexes = new Set<number>();
-
-      const assignGroupToFallback = (
-        groupKey: string,
-        group: OPDDocumentGroup,
-        fallbackIndex: number
-      ) => {
-        const existing = flagsByFallbackIndex.get(fallbackIndex) || {
-          gap: false,
-          gbs: false,
-          kak: false,
-          sk: false,
-        };
-
-        flagsByFallbackIndex.set(
-          fallbackIndex,
-          mergeDocumentFlags(existing, group)
-        );
-        assignedGroupKeys.add(groupKey);
-        usedFallbackIndexes.add(fallbackIndex);
-      };
-
-      // Tahap 1: cocokkan nama yang identitasnya benar-benar sama.
-      uploadedGroups.forEach(({ groupKey, group }) => {
-        const sourceIdentity = createOPDIdentityKey(group.namaOPD);
-        const exactIndex = OFFICIAL_OPDS.findIndex((opd, index) => {
-          if (usedFallbackIndexes.has(index)) return false;
-          return (
-            createOPDIdentityKey(opd.namaOPD) === sourceIdentity ||
-            createOPDIdentityKey(opd.namaPendek) === sourceIdentity
-          );
-        });
-
-        if (exactIndex >= 0) {
-          assignGroupToFallback(groupKey, group, exactIndex);
-        }
-      });
-
-      // Tahap 2: variasi penulisan dicocokkan satu-lawan-satu.
-      const fuzzyCandidates: Array<{
-        groupKey: string;
-        group: OPDDocumentGroup;
-        fallbackIndex: number;
-        score: number;
-      }> = [];
-
-      uploadedGroups.forEach(({ groupKey, group }) => {
-        if (assignedGroupKeys.has(groupKey)) return;
-
-        OFFICIAL_OPDS.forEach((opd, fallbackIndex) => {
-          if (usedFallbackIndexes.has(fallbackIndex)) return;
-
-          const score = Math.max(
-            getOPDNameSimilarity(group.namaOPD, opd.namaOPD),
-            getOPDNameSimilarity(group.namaOPD, opd.namaPendek)
+          const rowsForSelectedYear = responseRows.filter(
+            row => extractYear(row[6]) === requestedYear
           );
 
-          fuzzyCandidates.push({
-            groupKey,
-            group,
-            fallbackIndex,
-            score,
+          /*
+           * Gabungkan baris milik OPD yang sama menggunakan identitas nama
+           * yang konservatif. Versi sebelumnya membuang kata DINAS/BADAN/BIRO
+           * dan memakai skor 0,34, sehingga beberapa OPD berbeda dapat masuk
+           * ke satu OPD yang sama dan jumlah tahun 2026/2027 menjadi kurang.
+           */
+          const documentsByOPD = new Map<string, OPDDocumentGroup>();
+
+          rowsForSelectedYear.forEach(row => {
+            const rawName = String(row[1] || '').trim();
+            const identityKey = createOPDIdentityKey(rawName);
+
+            if (!rawName || !identityKey) return;
+
+            const incoming: DocumentFlags = {
+              gap: hasDocumentValue(row[2]),
+              gbs: hasDocumentValue(row[3]),
+              kak: hasDocumentValue(row[4]),
+              sk: hasDocumentValue(row[5]),
+            };
+
+            const existing = documentsByOPD.get(identityKey);
+
+            if (existing) {
+              const merged = mergeDocumentFlags(existing, incoming);
+              documentsByOPD.set(identityKey, {
+                ...merged,
+                namaOPD: existing.namaOPD,
+              });
+            } else {
+              documentsByOPD.set(identityKey, {
+                ...incoming,
+                namaOPD: rawName,
+              });
+            }
           });
-        });
-      });
 
-      fuzzyCandidates
-        .sort((left, right) => right.score - left.score)
-        .forEach(candidate => {
-          if (candidate.score < 0.45) return;
-          if (assignedGroupKeys.has(candidate.groupKey)) return;
-          if (usedFallbackIndexes.has(candidate.fallbackIndex)) return;
+          const uploadedGroups = Array.from(documentsByOPD.entries())
+            .filter(([, group]) => hasAnyDocument(group))
+            .map(([groupKey, group]) => ({ groupKey, group }));
 
-          assignGroupToFallback(
-            candidate.groupKey,
-            candidate.group,
-            candidate.fallbackIndex
-          );
-        });
+          const flagsByFallbackIndex = new Map<number, DocumentFlags>();
+          const assignedGroupKeys = new Set<string>();
+          const usedFallbackIndexes = new Set<number>();
 
-      const unmatchedUploadedGroups = uploadedGroups
-        .filter(({ groupKey }) => !assignedGroupKeys.has(groupKey))
-        .map(({ group }) => group);
-
-      const authoritativeUploadedCount = Math.min(
-        OFFICIAL_OPDS.length,
-        uploadedGroups.length
-      );
-
-      const parsedOPDs: OPDData[] = OFFICIAL_OPDS.map((opd, index) => {
-        const flags = flagsByFallbackIndex.get(index) || {
-          gap: false,
-          gbs: false,
-          kak: false,
-          sk: false,
-        };
-
-        const jumlahUpload = [
-          flags.gap,
-          flags.gbs,
-          flags.kak,
-          flags.sk
-        ].filter(Boolean).length;
-
-        return {
-          ...opd,
-          no: index + 1,
-          jumlahUpload,
-          status: jumlahUpload > 0 ? 'SUDAH' : 'BELUM',
-          originalRow: [
-            '',
-            opd.namaOPD,
-            flags.gap ? 'SUDAH' : 'BELUM',
-            flags.gbs ? 'SUDAH' : 'BELUM',
-            flags.kak ? 'SUDAH' : 'BELUM',
-            flags.sk ? 'SUDAH' : 'BELUM',
-            requestedYear,
-          ],
-        };
-      });
-
-      console.info('Diagnostik dashboard TiDB', {
-        tahun: requestedYear,
-        jumlahBarisTahun: rowsForSelectedYear.length,
-        jumlahOPDResmiTiDB: uploadedGroups.length,
-        jumlahCocokDaftar: flagsByFallbackIndex.size,
-        namaResmiBelumCocok: unmatchedUploadedGroups.map(item => item.namaOPD),
-        catatan: 'OPD di luar daftar resmi 42 tidak dihitung dan tidak ditampilkan.',
-      });
-
-      // Request untuk tahun lama tidak boleh menimpa tahun yang baru dipilih.
-      if (requestedYear !== dashboardYearRef.current) {
-        console.info('Hasil TiDB diabaikan karena tahun dashboard sudah berubah.', {
-          tahunRequest: requestedYear,
-          tahunAktif: dashboardYearRef.current,
-        });
-        return;
-      }
-
-      const snapshotSignature = createDashboardSnapshotSignature(parsedOPDs);
-      const previousSnapshot = lastAcceptedSnapshotRef.current;
-      const isRegression = Boolean(
-        previousSnapshot &&
-        previousSnapshot.year === requestedYear &&
-        isDashboardSnapshotRegression(previousSnapshot.data, parsedOPDs)
-      );
-
-      let shouldAcceptSnapshot = true;
-
-      if (isRegression) {
-        const previousCandidate = pendingRegressionRef.current;
-        const confirmations =
-          previousCandidate?.year === requestedYear &&
-          previousCandidate.signature === snapshotSignature
-            ? previousCandidate.confirmations + 1
-            : 1;
-
-        pendingRegressionRef.current = {
-          year: requestedYear,
-          signature: snapshotSignature,
-          confirmations,
-        };
-
-        // Pertahankan mekanisme keamanan lama: penurunan harus terbaca dua kali.
-        shouldAcceptSnapshot = confirmations >= 2;
-      } else {
-        pendingRegressionRef.current = null;
-      }
-
-      if (!shouldAcceptSnapshot) {
-        console.warn('Penurunan sementara diabaikan sampai terkonfirmasi dua kali.', {
-          tahun: requestedYear,
-          jumlahSebelumnya: previousSnapshot?.data.filter(
-            opd => opd.jumlahUpload > 0
-          ).length,
-          jumlahHasilBaru: parsedOPDs.filter(
-            opd => opd.jumlahUpload > 0
-          ).length,
-        });
-        return;
-      }
-
-      pendingRegressionRef.current = null;
-      lastAcceptedSnapshotRef.current = {
-        year: requestedYear,
-        signature: snapshotSignature,
-        data: parsedOPDs,
-      };
-      hasLiveDataRef.current = true;
-
-      setAllResponseRows(responseRows);
-
-      const yearsFromDatabase = Array.from(
-        new Set(responseRows.map(row => extractYear(row[6])).filter(Boolean))
-      ).sort((a, b) => Number(a) - Number(b));
-
-      setAvailableDashboardYears(prev =>
-        Array.from(
-          new Set([...prev, ...yearsFromDatabase, '2025', '2026', '2027'])
-        ).sort((a, b) => Number(a) - Number(b))
-      );
-
-      // Hapus penanda upload sementara hanya setelah data TiDB mengonfirmasi.
-      setPendingUploadedDocs(previous => {
-        const now = Date.now();
-        const next: Record<string, Record<string, PendingUploadFlags>> = {};
-
-        Object.entries(previous).forEach(([opdKey, recordsByYear]) => {
-          Object.entries(recordsByYear).forEach(([year, pending]) => {
-            if (pending.expiresAt <= now) return;
-
-            const confirmed: DocumentFlags = {
+          const assignGroupToFallback = (
+            groupKey: string,
+            group: OPDDocumentGroup,
+            fallbackIndex: number
+          ) => {
+            const existing = flagsByFallbackIndex.get(fallbackIndex) || {
               gap: false,
               gbs: false,
               kak: false,
               sk: false,
             };
 
-            responseRows.forEach(row => {
-              if (extractYear(row[6]) !== year) return;
+            flagsByFallbackIndex.set(
+              fallbackIndex,
+              mergeDocumentFlags(existing, group)
+            );
+            assignedGroupKeys.add(groupKey);
+            usedFallbackIndexes.add(fallbackIndex);
+          };
 
-              const rowName = String(row[1] || '').trim();
-              const isExactIdentity =
-                createOPDIdentityKey(rowName) === opdKey;
-
-              if (!isExactIdentity) {
-                const score = Math.max(
-                  getOPDNameSimilarity(rowName, loggedInOPD?.namaOPD || ''),
-                  getOPDNameSimilarity(rowName, loggedInOPD?.namaPendek || '')
-                );
-
-                if (score < 0.60) return;
-              }
-
-              confirmed.gap = confirmed.gap || hasDocumentValue(row[2]);
-              confirmed.gbs = confirmed.gbs || hasDocumentValue(row[3]);
-              confirmed.kak = confirmed.kak || hasDocumentValue(row[4]);
-              confirmed.sk = confirmed.sk || hasDocumentValue(row[5]);
+          // Tahap 1: cocokkan nama yang identitasnya benar-benar sama.
+          uploadedGroups.forEach(({ groupKey, group }) => {
+            const sourceIdentity = createOPDIdentityKey(group.namaOPD);
+            const exactIndex = OFFICIAL_OPDS.findIndex((opd, index) => {
+              if (usedFallbackIndexes.has(index)) return false;
+              return (
+                createOPDIdentityKey(opd.namaOPD) === sourceIdentity ||
+                createOPDIdentityKey(opd.namaPendek) === sourceIdentity
+              );
             });
 
-            const remaining: PendingUploadFlags = {
-              gap: pending.gap && !confirmed.gap,
-              gbs: pending.gbs && !confirmed.gbs,
-              kak: pending.kak && !confirmed.kak,
-              sk: pending.sk && !confirmed.sk,
-              expiresAt: pending.expiresAt,
-            };
-
-            if (hasAnyDocument(remaining)) {
-              next[opdKey] = {
-                ...(next[opdKey] || {}),
-                [year]: remaining,
-              };
+            if (exactIndex >= 0) {
+              assignGroupToFallback(groupKey, group, exactIndex);
             }
           });
-        });
 
-        return next;
-      });
+          // Tahap 2: untuk variasi penulisan, lakukan pencocokan satu-lawan-satu.
+          // Satu OPD resmi hanya boleh dipakai oleh satu identitas Form Responses.
+          const fuzzyCandidates: Array<{
+            groupKey: string;
+            group: OPDDocumentGroup;
+            fallbackIndex: number;
+            score: number;
+          }> = [];
 
-      setSheetUploadedCount(authoritativeUploadedCount);
-      setData(parsedOPDs);
-      setDataSource('LIVE_TIDB');
-      setLastUpdated(new Date());
+          uploadedGroups.forEach(({ groupKey, group }) => {
+            if (assignedGroupKeys.has(groupKey)) return;
 
-    } catch (error) {
-      console.error('Gagal mengambil dashboard TiDB:', error);
+            OFFICIAL_OPDS.forEach((opd, fallbackIndex) => {
+              if (usedFallbackIndexes.has(fallbackIndex)) return;
 
-      const message = error instanceof Error
-        ? error.message
-        : 'Data dashboard TiDB tidak dapat dibaca.';
+              const score = Math.max(
+                getOPDNameSimilarity(group.namaOPD, opd.namaOPD),
+                getOPDNameSimilarity(group.namaOPD, opd.namaPendek)
+              );
 
-      if (hasLiveDataRef.current) {
-        setErrorMsg(`${message} Data terakhir yang valid tetap ditampilkan.`);
-      } else {
-        setErrorMsg(message);
-        setData(OFFICIAL_OPDS);
-        setSheetUploadedCount(
-          OFFICIAL_OPDS.filter(item => item.status === 'SUDAH').length
-        );
-        setDataSource('FALLBACK_DEMO');
+              fuzzyCandidates.push({
+                groupKey,
+                group,
+                fallbackIndex,
+                score,
+              });
+            });
+          });
+
+          fuzzyCandidates
+            .sort((left, right) => right.score - left.score)
+            .forEach(candidate => {
+              if (candidate.score < 0.45) return;
+              if (assignedGroupKeys.has(candidate.groupKey)) return;
+              if (usedFallbackIndexes.has(candidate.fallbackIndex)) return;
+
+              assignGroupToFallback(
+                candidate.groupKey,
+                candidate.group,
+                candidate.fallbackIndex
+              );
+            });
+
+          const unmatchedUploadedGroups = uploadedGroups
+            .filter(({ groupKey }) => !assignedGroupKeys.has(groupKey))
+            .map(({ group }) => group);
+
+          /*
+           * Angka kartu dashboard berasal langsung dari jumlah OPD unik yang
+           * memiliki minimal satu dokumen pada Form Responses tahun terpilih.
+           * Hanya OPD dalam daftar resmi yang dihitung, sehingga data lain di
+           * Form Responses tidak dapat menambah jumlah dashboard di atas 42.
+           */
+          const authoritativeUploadedCount = Math.min(
+            OFFICIAL_OPDS.length,
+            uploadedGroups.length
+          );
+
+          const parsedOPDs: OPDData[] = OFFICIAL_OPDS.map((opd, index) => {
+            const flags = flagsByFallbackIndex.get(index) || {
+              gap: false,
+              gbs: false,
+              kak: false,
+              sk: false,
+            };
+
+            const jumlahUpload = [
+              flags.gap,
+              flags.gbs,
+              flags.kak,
+              flags.sk
+            ].filter(Boolean).length;
+
+            return {
+              ...opd,
+              no: index + 1,
+              jumlahUpload,
+              status: jumlahUpload > 0 ? 'SUDAH' : 'BELUM',
+              originalRow: [
+                '',
+                opd.namaOPD,
+                flags.gap ? 'SUDAH' : 'BELUM',
+                flags.gbs ? 'SUDAH' : 'BELUM',
+                flags.kak ? 'SUDAH' : 'BELUM',
+                flags.sk ? 'SUDAH' : 'BELUM',
+                requestedYear,
+              ],
+            };
+          });
+
+          /*
+           * Jangan menambahkan baris OPD tambahan. Dashboard dan daftar OPD
+           * dibatasi hanya pada 42 OPD resmi di atas.
+           */
+
+          console.info('Diagnostik dashboard Form Responses', {
+            tahun: requestedYear,
+            jumlahBarisTahun: rowsForSelectedYear.length,
+            jumlahOPDResmiFormResponses: uploadedGroups.length,
+            jumlahCocokDaftar: flagsByFallbackIndex.size,
+            namaResmiBelumCocok: unmatchedUploadedGroups.map(item => item.namaOPD),
+            catatan: 'OPD di luar daftar resmi 42 tidak dihitung dan tidak ditampilkan.',
+          });
+
+          // Request untuk tahun lama tidak boleh menimpa tahun yang baru dipilih.
+          if (requestedYear !== dashboardYearRef.current) {
+            console.info('Hasil CSV diabaikan karena tahun dashboard sudah berubah.', {
+              tahunRequest: requestedYear,
+              tahunAktif: dashboardYearRef.current,
+            });
+            return;
+          }
+
+          const snapshotSignature = createDashboardSnapshotSignature(parsedOPDs);
+          const previousSnapshot = lastAcceptedSnapshotRef.current;
+          const isRegression = Boolean(
+            previousSnapshot &&
+            previousSnapshot.year === requestedYear &&
+            isDashboardSnapshotRegression(previousSnapshot.data, parsedOPDs)
+          );
+
+          let shouldAcceptSnapshot = true;
+
+          if (isRegression) {
+            const previousCandidate = pendingRegressionRef.current;
+            const confirmations =
+              previousCandidate?.year === requestedYear &&
+              previousCandidate.signature === snapshotSignature
+                ? previousCandidate.confirmations + 1
+                : 1;
+
+            pendingRegressionRef.current = {
+              year: requestedYear,
+              signature: snapshotSignature,
+              confirmations,
+            };
+
+            // Satu hasil yang menurun dapat berasal dari cache lama Google.
+            // Terapkan penurunan hanya setelah hasil yang sama terbaca dua kali.
+            shouldAcceptSnapshot = confirmations >= 2;
+          } else {
+            pendingRegressionRef.current = null;
+          }
+
+          if (!shouldAcceptSnapshot) {
+            console.warn('Penurunan sementara diabaikan sampai terkonfirmasi dua kali.', {
+              tahun: requestedYear,
+              jumlahSebelumnya: previousSnapshot?.data.filter(
+                opd => opd.jumlahUpload > 0
+              ).length,
+              jumlahHasilBaru: parsedOPDs.filter(
+                opd => opd.jumlahUpload > 0
+              ).length,
+            });
+            return;
+          }
+
+          pendingRegressionRef.current = null;
+          lastAcceptedSnapshotRef.current = {
+            year: requestedYear,
+            signature: snapshotSignature,
+            data: parsedOPDs,
+          };
+          hasLiveDataRef.current = true;
+
+          setAllResponseRows(responseRows);
+
+          const yearsFromSheet = Array.from(
+            new Set(responseRows.map(row => extractYear(row[6])).filter(Boolean))
+          ).sort((a, b) => Number(a) - Number(b));
+
+          setAvailableDashboardYears(prev =>
+            Array.from(
+              new Set([...prev, ...yearsFromSheet, '2025', '2026', '2027'])
+            ).sort((a, b) => Number(a) - Number(b))
+          );
+
+          // Hapus penanda sementara hanya berdasarkan snapshot yang diterima.
+          setPendingUploadedDocs(previous => {
+            const now = Date.now();
+            const next: Record<string, Record<string, PendingUploadFlags>> = {};
+
+            Object.entries(previous).forEach(([opdKey, recordsByYear]) => {
+              Object.entries(recordsByYear).forEach(([year, pending]) => {
+                if (pending.expiresAt <= now) return;
+
+                const confirmed: DocumentFlags = {
+                  gap: false,
+                  gbs: false,
+                  kak: false,
+                  sk: false,
+                };
+
+                responseRows.forEach(row => {
+                  if (extractYear(row[6]) !== year) return;
+
+                  const rowName = String(row[1] || '').trim();
+                  const isExactIdentity =
+                    createOPDIdentityKey(rowName) === opdKey;
+
+                  if (!isExactIdentity) {
+                    const score = getOPDNameSimilarity(rowName, opdKey);
+                    if (score < 0.60) return;
+                  }
+
+                  confirmed.gap = confirmed.gap || hasDocumentValue(row[2]);
+                  confirmed.gbs = confirmed.gbs || hasDocumentValue(row[3]);
+                  confirmed.kak = confirmed.kak || hasDocumentValue(row[4]);
+                  confirmed.sk = confirmed.sk || hasDocumentValue(row[5]);
+                });
+
+                const remaining: PendingUploadFlags = {
+                  gap: pending.gap && !confirmed.gap,
+                  gbs: pending.gbs && !confirmed.gbs,
+                  kak: pending.kak && !confirmed.kak,
+                  sk: pending.sk && !confirmed.sk,
+                  expiresAt: pending.expiresAt,
+                };
+
+                if (hasAnyDocument(remaining)) {
+                  next[opdKey] = {
+                    ...(next[opdKey] || {}),
+                    [year]: remaining,
+                  };
+                }
+              });
+            });
+
+            return next;
+          });
+
+          setSheetUploadedCount(authoritativeUploadedCount);
+          setData(parsedOPDs);
+          setDataSource('LIVE_SHEET');
+          setLastUpdated(new Date());
+        } catch (error) {
+          console.error('Gagal memproses CSV Form Responses:', error);
+
+          const message = error instanceof Error
+            ? error.message
+            : 'Format CSV Form Responses tidak sesuai.';
+
+          if (hasLiveDataRef.current) {
+            // Kesalahan sesaat tidak boleh menghapus data live yang sudah valid.
+            setErrorMsg(`${message} Data terakhir yang valid tetap ditampilkan.`);
+          } else {
+            setErrorMsg(message);
+            setData(OFFICIAL_OPDS);
+            setSheetUploadedCount(
+              OFFICIAL_OPDS.filter(item => item.status === 'SUDAH').length
+            );
+            setDataSource('FALLBACK_DEMO');
+          }
+        } finally {
+          finishFetch();
+        }
+      },
+      error: (error) => {
+        console.error('Gagal mengambil CSV Form Responses:', error);
+
+        if (hasLiveDataRef.current) {
+          setErrorMsg(
+            'Koneksi ke Form Responses sempat gagal. Data terakhir yang valid tetap ditampilkan.'
+          );
+        } else {
+          setErrorMsg(
+            'Gagal terhubung ke CSV Form Responses. Pastikan tab sudah dipublikasikan dan URL/GID benar.'
+          );
+          setData(OFFICIAL_OPDS);
+          setSheetUploadedCount(
+            OFFICIAL_OPDS.filter(item => item.status === 'SUDAH').length
+          );
+          setDataSource('FALLBACK_DEMO');
+        }
+
+        finishFetch();
       }
-    } finally {
-      finishFetch();
-    }
+    });
   };
 
-  // Helper to generate distinct passwords for all 42 OPDs
-  const getOPDPassword = (opd: OPDData): string => {
-    let base = opd.namaPendek
-      .toUpperCase()
-      .replace("DINAS ", "")
-      .replace("BIRO ", "")
-      .replace("BADAN ", "")
-      .replace(/[^A-Z0-9]/g, "")
-      .toLowerCase();
-    
-    // If empty after clean, fallback to short name clean
-    if (!base) {
-      base = opd.namaPendek.toLowerCase().replace(/[^a-z0-9]/g, "");
-    }
-    return `${base}123`;
-  };
-
-  // Authentication & upload handlers
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  // Login OPD sekarang menggunakan akun yang tersimpan di TiDB.
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!selectedOPDToLogin) {
       setLoginError("Silakan pilih instansi/OPD terlebih dahulu.");
       return;
     }
-    const trimmedPass = password.trim().toLowerCase();
-    const correctPass = getOPDPassword(selectedOPDToLogin);
-    
-    // Accept dedicated password as well as standard generic passcodes
-    const standardPasses = [correctPass, 'sandi123', 'ntt123', 'opd123', 'admin123', '123456'];
-    
-    if (standardPasses.includes(trimmedPass)) {
+
+    if (!password.trim()) {
+      setLoginError("Kata sandi wajib diisi.");
+      return;
+    }
+
+    setLoginError(null);
+
+    try {
+      const response = await fetch(
+        GOOGLE_APPS_SCRIPT_WEB_APP_URL,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'text/plain;charset=utf-8',
+          },
+          body: JSON.stringify({
+            action: 'loginOPD',
+            opdName: selectedOPDToLogin.namaOPD,
+            password,
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok || !result?.success) {
+        throw new Error(
+          result?.message || 'Login OPD gagal.'
+        );
+      }
+
       setLoggedInOPD(selectedOPDToLogin);
       setLoginError(null);
       setPassword('');
       setShowLoginModal(false);
-    } else {
-      setLoginError(`Kata sandi salah. Gunakan sandi uji coba khusus: ${correctPass} (atau sandi123)`);
+    } catch (error) {
+      setLoginError(
+        error instanceof Error
+          ? error.message
+          : 'Login OPD gagal. Silakan coba lagi.'
+      );
     }
   };
 
@@ -1427,7 +1452,7 @@ export default function App() {
       setUploadProgress(0);
     }, 1000);
 
-    // Beri waktu singkat agar upload, Vercel API, dan TiDB terkonfirmasi.
+    // Google Sheets Published CSV dapat terlambat beberapa detik.
     [1500, 4000, 8000, 12000].forEach(delay => {
       window.setTimeout(() => fetchData(true), delay);
     });
@@ -1510,6 +1535,7 @@ export default function App() {
             className="flex-grow flex flex-col"
           >
             <OPDLoginScreen
+              apiUrl={GOOGLE_APPS_SCRIPT_WEB_APP_URL}
               data={displayData}
               searchOPDQuery={searchOPDQuery}
               setSearchOPDQuery={setSearchOPDQuery}
